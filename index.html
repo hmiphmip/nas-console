@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>
+  (function () { try { var t = localStorage.getItem('nas-console-theme'); if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t); } catch (e) {} })();
+</script>
+<title>NAS 出片控制台</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2032%2032%27%3E%3Crect%20width%3D%2732%27%20height%3D%2732%27%20rx%3D%278%27%20fill%3D%27%23E35D0C%27%2F%3E%3Crect%20x%3D%279%27%20y%3D%278%27%20width%3D%273.4%27%20height%3D%2716%27%20rx%3D%271.7%27%20fill%3D%27%23fff%27%2F%3E%3Crect%20x%3D%2714.4%27%20y%3D%278%27%20width%3D%278.6%27%20height%3D%273.4%27%20rx%3D%271.7%27%20fill%3D%27%23fff%27%2F%3E%3Crect%20x%3D%2714.4%27%20y%3D%2714.3%27%20width%3D%278.6%27%20height%3D%273.4%27%20rx%3D%271.7%27%20fill%3D%27%23fff%27%2F%3E%3Crect%20x%3D%2714.4%27%20y%3D%2720.6%27%20width%3D%278.6%27%20height%3D%273.4%27%20rx%3D%271.7%27%20fill%3D%27%23fff%27%2F%3E%3C%2Fsvg%3E">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app">
+  <aside class="sidebar">
+    <div class="side-head">
+      <div class="brand-mark" aria-hidden="true">N</div>
+      <div class="brand-text">
+        <h1>AI 自动出片</h1>
+        <p>n8n 全流程执行</p>
+      </div>
+    </div>
+
+    <nav class="anchornav" aria-label="页面导航">
+      <a href="#view-overview">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/></svg>
+        <span>总览</span>
+      </a>
+      <a href="#view-analysis">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 20v-7M12 20V4M19 20v-4"/><path d="M3 20h18"/></svg>
+        <span>数据</span>
+      </a>
+      <a href="#view-video">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.8" y="4.8" width="18.4" height="14.4" rx="2.8"/><path d="M10.2 9.3l5.2 2.7-5.2 2.7z"/></svg>
+        <span>成片</span>
+      </a>
+      <a href="#demo-console">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.8" y="4.2" width="18.4" height="15.6" rx="2.8"/><path d="M7 9.6l2.8 2.6L7 14.8M13 15h4"/></svg>
+        <span>控制台</span>
+      </a>
+    </nav>
+
+    <div class="side-foot">
+      <p class="side-label">服务状态</p>
+      <div class="top-status" id="topStatus">
+        <div class="led-item"><i data-led="n8n" class="idle"></i><span>n8n</span><span class="led-txt">检测中</span></div>
+        <div class="led-item"><i data-led="executor" class="idle"></i><span>执行器</span><span class="led-txt">检测中</span></div>
+        <div class="led-item"><i data-led="model" class="idle"></i><span>模型网关</span><span class="led-txt">检测中</span></div>
+        <div class="led-item"><i data-led="pipeline" class="idle"></i><span>流水线</span><span class="led-txt">检测中</span></div>
+      </div>
+      <div class="status-ctl">
+        <span class="clock" id="clock">--:--:--</span>
+        <button class="theme-toggle" id="themeToggle" type="button" aria-pressed="false" title="切换深色 / 浅色模式">◐ 深色</button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="shell">
+  <main>
+    <!-- 流水线总进度（吸顶，实时） -->
+    <div class="pipe-progress" id="pipeProgress">
+      <div class="pp-row">
+        <span class="pp-label">流水线进度</span>
+        <span class="pp-now" id="ppNow">读取中…</span>
+        <span class="pp-pct" id="ppPct">--%</span>
+      </div>
+      <div class="pp-track" aria-hidden="true"><div class="pp-fill" id="ppFill"></div></div>
+      <ol class="pp-steps" id="ppSteps" aria-label="流水线步骤：从确定调研方向到发布"></ol>
+    </div>
+
+    <!-- 总览 -->
+    <section class="view active sec-hero" id="view-overview">
+      <div class="view-error" data-error-for="overview" hidden></div>
+      <div class="hero hero-solo">
+        <div class="hero-media">
+          <div class="panel-head"><h3 data-n="03">最新成片</h3><span class="pill" id="ovRunPill">—</span></div>
+          <div id="ovLatest" class="latest-run"><div class="skeleton">读取成片中…</div></div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="panel" id="ovPipeline">
+          <div class="panel-head"><h3 data-n="01">流水线状态</h3><span class="pill" id="ovPipePill">检测中</span></div>
+          <div class="pipe-main">
+            <div class="big-status" id="ovPipeState">—</div>
+            <div class="sub" id="ovPipeSince">最近启动：—</div>
+            <div class="pipe-cta">
+              <button class="btn btn-primary" id="ovStart">▶ 启动全流程</button>
+              <span class="hint" style="margin:0">约 20–30 分钟 · 详情见下方执行控制</span>
+            </div>
+          </div>
+          <div class="stage-strip" id="ovStages"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3 data-n="02">模型与网关</h3><span class="pill" id="ovModelPill">—</span></div>
+          <dl class="kv" id="ovModelKv">
+            <dt><label for="ovModel" style="cursor:text">模型</label></dt>
+            <dd><input id="ovModel" class="kv-input mono" list="ovModelList" autocomplete="off" spellcheck="false" placeholder="—">
+              <datalist id="ovModelList"></datalist></dd>
+            <dt><label for="ovGateway" style="cursor:text">网关</label></dt>
+            <dd><input id="ovGateway" class="kv-input mono" autocomplete="off" spellcheck="false" placeholder="http://your-gateway:20129/v1"></dd>
+            <dt><label for="ovKey" style="cursor:text">密钥</label></dt>
+            <dd><input id="ovKey" type="password" class="kv-input mono" autocomplete="new-password" placeholder="—"></dd>
+            <dt>执行器</dt><dd id="ovExecutor">—</dd>
+          </dl>
+          <div class="form-actions" id="ovModelActions" hidden style="margin-top:10px">
+            <button class="btn btn-primary" id="ovModelSave">测试连通并保存</button>
+            <button class="btn" id="ovModelReset" type="button">还原</button>
+            <span id="ovModelMsg" class="form-msg"></span>
+          </div>
+          <p class="hint" style="margin-top:8px">模型 / 网关 / 密钥可直接在行内修改；保存会先做连通测试，通过后写入执行器并自动重启（中断运行中的任务）。</p>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-head"><h3 data-n="04">基础设施</h3></div>
+          <div class="infra" id="ovInfra"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3 data-n="05">当前选题方向</h3><a class="link" href="#demo-console">修改 →</a></div>
+          <div class="topic-view" id="ovTopic"><div class="skeleton">读取配置中…</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 分析 = 数据证据 -->
+    <section class="view active sec-block" id="view-analysis">
+      <div class="view-error" data-error-for="analysis" hidden></div>
+      <div class="block-head"><h2 data-n="02">运行数据</h2><p class="dim">来自真实执行记录</p></div>
+      <div class="grid-4 stats-row" id="anStats"></div>
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-head"><h3 data-n="01">每日执行（14 天）</h3></div>
+          <div class="chart" id="anDaily"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3 data-n="02">成功执行耗时（分钟）</h3></div>
+          <div class="chart" id="anDur"></div>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-head"><h3 data-n="03">阶段健康度</h3><span class="dim">执行器任务库 · 最近 300 个任务</span></div>
+          <div class="table-wrap"><table class="table" id="anStages">
+            <thead><tr><th>阶段</th><th>成功</th><th>失败</th><th>自动重试</th><th>成功率</th></tr></thead>
+            <tbody></tbody>
+          </table></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3 data-n="04">最近失败与重试</h3><span class="dim">重试两次仍失败才终止流水线</span></div>
+          <div class="table-wrap"><table class="table" id="anRetries">
+            <thead><tr><th>阶段</th><th>结果</th><th>重试</th><th>时间</th></tr></thead>
+            <tbody></tbody>
+          </table></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3 data-n="05">执行记录</h3><span class="dim">n8n 数据库 · 最近 30 条</span></div>
+        <div class="table-wrap"><table class="table" id="anExecs">
+          <thead><tr><th>ID</th><th>状态</th><th>模式</th><th>开始</th><th>结束</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- 视频 = 成片画廊 -->
+    <section class="view active sec-block" id="view-video">
+      <div class="view-error" data-error-for="video" hidden></div>
+      <div class="block-head"><h2 data-n="03">代表成片</h2><p class="dim">出片与归档产物，点击卡片即可观看</p></div>
+      <div class="panel">
+        <div class="panel-head"><h3>成片审片台</h3><span class="dim">来源：出片 / 归档目录</span></div>
+        <div class="video-layout">
+          <div class="video-player-wrap">
+            <video id="videoPlayer" controls playsinline></video>
+            <div class="video-empty" id="videoEmpty">正在读取成片列表…</div>
+            <div class="video-info mono" id="videoInfo"></div>
+          </div>
+          <div class="video-list" id="videoList"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 操作台：启动 / 发布 / 配置 -->
+    <div class="block-head sec-console-head">
+      <h2 data-n="04">操作台</h2>
+      <p class="dim">启动流水线 · 发布准备 · 系统配置</p>
+    </div>
+    <details class="demo-console" id="demo-console" open>
+      <summary>展开 / 收起操作台</summary>
+
+      <!-- 执行 -->
+      <section class="view active" id="view-run">
+        <div class="group-head"><span class="g-n">4.1</span><h3>执行控制</h3><p class="dim">启动全流程 · 看阶段进度与实时日志</p></div>
+        <div class="view-error" data-error-for="run" hidden></div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-head"><h3 data-n="01">运行控制</h3><span class="pill" id="runPill">—</span></div>
+            <p class="hint">由 n8n 引擎执行完整工作流（研究 → 选题 → 规划 → 开发 → 验收 → 录屏 → 出片 → 归档），全程约 20–30 分钟。</p>
+            <div class="run-actions">
+              <button class="btn btn-primary btn-lg" id="btnStart">▶ 启动全流程</button>
+              <button class="btn" id="btnStartFromOverview">▶ 从总览启动</button>
+              <button class="btn" id="btnRefreshRun">⟳ 刷新状态</button>
+            </div>
+            <div class="run-meta mono" id="runMeta"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h3 data-n="02">阶段进度</h3></div>
+            <ol class="stage-list" id="runStages"></ol>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3 data-n="03">执行日志（实时）</h3><span class="mono dim" id="runLogPath"></span></div>
+          <pre class="log" id="runLog">等待流水线启动…</pre>
+        </div>
+      </section>
+
+      <!-- 发布 -->
+      <section class="view active" id="view-publish">
+        <div class="group-head"><span class="g-n">4.2</span><h3>发布准备</h3><p class="dim">账号状态 · 发布队列 · 发布包</p></div>
+        <div class="view-error" data-error-for="publish" hidden></div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-head"><h3 data-n="01">账号状态</h3><span class="pill">状态</span></div>
+            <div class="accounts" id="pubAccounts"></div>
+            <p class="hint">当前部署未接入抖音 / 小红书的登录与发布接口。账号状态如实显示「未登录」，不存在模拟发布。接入后此处将提供扫码登录与发布队列执行。本工具不代登录、不代发布。</p>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h3 data-n="02">加入发布队列</h3></div>
+            <div class="form">
+              <label>成片
+                <select id="pubVideo" aria-label="选择成片"><option value="">读取成片中…</option></select>
+              </label>
+              <label>平台
+                <select id="pubPlatform" aria-label="选择平台">
+                  <option value="douyin">抖音（9:16）</option>
+                  <option value="xhs">小红书（需 3:4 安全版）</option>
+                </select>
+              </label>
+              <label>文案
+                <textarea id="pubCaption" rows="3" maxlength="500" placeholder="视频标题与话题标签…"></textarea>
+              </label>
+              <button class="btn btn-primary" id="pubAdd" disabled>＋ 加入队列</button>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3 data-n="03">生成发布包</h3><span class="dim">抽封面 · 转 3:4 · 出文案</span></div>
+          <div class="form">
+            <p class="hint">选一条成片，按平台生成可直接拿去上传的物料：抖音导出 9:16 母版与封面帧；小红书另外真实重排 1080×1440 的 3:4 版并实测字幕安全区。账号登录与上传仍需人工，本工具不代登录、不代发布、不自动发送。</p>
+            <button class="btn" id="pubPackage" disabled>生成发布包</button>
+            <div id="pkgResult" class="pkg-result"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3 data-n="04">发布队列</h3><span class="dim">待授权 · 不自动发送</span></div>
+          <div class="table-wrap"><table class="table" id="pubQueue">
+            <thead><tr><th>成片</th><th>平台</th><th>文案</th><th>规格检查</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody></tbody>
+          </table></div>
+        </div>
+      </section>
+
+      <!-- 设置 -->
+      <section class="view active" id="view-settings">
+        <div class="group-head"><span class="g-n">4.3</span><h3>系统配置</h3><p class="dim">立题方向 · 模型与网关 · 配音音色 · 系统地址</p></div>
+        <div class="view-error" data-error-for="settings" hidden></div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-head"><h3 data-n="01">立题方向</h3><span class="dim">写入工作流 Discovery 节点</span></div>
+            <div class="form">
+              <label>选题方向（query，≤120 字符）
+                <input id="cfgQuery" maxlength="120">
+              </label>
+              <label>业务背景（business_context，≤2000 字符）
+                <textarea id="cfgContext" rows="6" maxlength="2000"></textarea>
+              </label>
+              <div class="form-actions">
+                <button class="btn btn-primary" id="cfgSave">保存并写入工作流</button>
+                <span id="cfgMsg" class="form-msg"></span>
+              </div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h3 data-n="02">模型与 API 配置</h3><span class="dim">写入执行器 · 改后自动重启</span></div>
+            <div class="form">
+              <label>模型网关 Base URL
+                <input id="mdlBase" class="mono" placeholder="http://your-gateway:20129/v1">
+              </label>
+              <label>模型
+                <div class="inline">
+                  <input id="mdlModel" class="mono">
+                  <button class="btn btn-sm" id="mdlFetch">获取列表</button>
+                </div>
+                <div class="model-list" id="mdlList"></div>
+              </label>
+              <label>API 密钥（留空 = 不修改）
+                <input id="mdlKey" type="password" class="mono" placeholder="sk-…">
+              </label>
+              <div class="form-actions">
+                <button class="btn" id="mdlTest">测试连通</button>
+                <button class="btn btn-primary" id="mdlSave">保存并生效</button>
+                <span id="mdlMsg" class="form-msg"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3 data-n="03">按阶段指定模型</h3><span class="dim">文本阶段用快模型 · 开发阶段用强模型</span></div>
+          <div class="form">
+            <p class="hint">可以给单个阶段指定模型，未指定的阶段继续用默认模型。此项会重启执行器并中断正在运行的任务，因此改动需点击「应用更改」并二次确认，单纯切换下拉不会写入。</p>
+            <div id="stageModels" class="stage-models"></div>
+            <div class="form-actions" style="margin-top:14px">
+              <button class="btn" id="smApply" disabled>应用更改</button>
+              <span id="smMsg" class="form-msg"></span>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3 data-n="04">配音音色</h3><span class="dim">下一次出片生效 · 不重启执行器</span></div>
+          <div class="form">
+            <p class="hint">选择下一次视频合成使用的中文配音。切换不会中断正在运行的任务。在线音色由微软 Edge 神经语音实时合成，出片时需要联网；所有音色当前均为测试用途，对外发布前需自行确认授权。</p>
+            <label>音色
+              <select id="voicePreset" aria-label="配音音色"></select>
+            </label>
+            <div id="voiceNote" class="hint" aria-live="polite"></div>
+            <div class="form-actions">
+              <button class="btn btn-primary" id="voiceApply" disabled>应用音色</button>
+              <span id="voiceMsg" class="form-msg" aria-live="polite"></span>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3 data-n="05">系统地址</h3></div>
+          <dl class="kv cols" id="sysEndpoints">
+            <dt>n8n 控制台</dt><dd class="mono"><a href="http://your-nas:5678" target="_blank" rel="noopener">http://your-nas:5678</a></dd>
+            <dt>执行器</dt><dd class="mono">http://your-executor:18764</dd>
+            <dt>模型网关</dt><dd class="mono">http://your-nas:20128（管理界面）</dd>
+            <dt>本控制台</dt><dd class="mono">http://your-nas:20130</dd>
+          </dl>
+          <p class="hint">以上为示例占位地址，实际请按部署环境通过环境变量配置（见 README）。</p>
+        </div>
+      </section>
+    </details>
+  </main>
+
+  <footer class="foot">
+    <span>NAS 出片控制台 · n8n 全流程执行</span>
+    <span class="mono" id="footTime"></span>
+  </footer>
+  </div>
+</div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
