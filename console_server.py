@@ -4,10 +4,10 @@
 端口 20130。所有操作针对真实服务：n8n / 执行器 / 模型网关 / 归档产物。
 不伪造登录或发布状态。
 """
-import json, subprocess, threading, time, uuid, re, sys, os, socket, sqlite3, hashlib, shutil
+import json, subprocess, threading, time, uuid, re, sys, os, socket, sqlite3, hashlib, shutil, hmac
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
-from urllib.parse import urlparse, unquote
+from urllib.parse import urlparse, unquote, parse_qs, quote
 from shlex import quote as shq
 
 # ---- 可配置项：均可用环境变量覆盖，默认值不含任何内网地址 ----
@@ -70,6 +70,13 @@ PKG_ROOT = BASE / 'packages'
 PORT = int(os.environ.get('CONSOLE_PORT', '20130'))
 WF_ID = os.environ.get('WF_ID', 'nasFullPipelineManual')
 
+# ---- 访问控制 ----
+# 监听地址：默认仅回环，避免管理台裸奔在局域网/公网。
+BIND = (os.environ.get('CONSOLE_BIND') or '127.0.0.1').strip()
+# 访问令牌：绑定非回环地址时必填；设置后所有请求都必须携带。
+TOKEN = (os.environ.get('CONSOLE_TOKEN') or '').strip()
+LOOPBACK = ('127.0.0.1', 'localhost', '::1')
+
 # 下游服务地址（默认值为占位，部署时用环境变量覆盖）
 N8N_URL = os.environ.get('N8N_URL', 'http://localhost:5678')
 EXECUTOR_HOST = os.environ.get('EXECUTOR_HOST', '127.0.0.1')
@@ -124,6 +131,31 @@ def mask(s, keep=4):
     if len(s) <= keep * 2:
         return s[:2] + '*' * (len(s) - 2)
     return s[:keep] + '…' + s[-keep:]
+
+
+# ---------- 访问控制 ----------
+
+def token_from(headers, query):
+    """按 Authorization: Bearer / X-Console-Token / Cookie / ?token= 的顺序取令牌。"""
+    auth = headers.get('Authorization') or ''
+    if auth[:7].lower() == 'bearer ':
+        return auth[7:].strip()
+    h = headers.get('X-Console-Token')
+    if h:
+        return h.strip()
+    for part in (headers.get('Cookie') or '').split(';'):
+        k, _, v = part.strip().partition('=')
+        if k == 'console_token' and v:
+            return unquote(v)
+    return (parse_qs(query or '').get('token') or [''])[0].strip()
+
+
+def authorized(headers, query):
+    """未设置 TOKEN 时放行（此时只应绑定回环地址，由 main() 强制）。"""
+    if not TOKEN:
+        return True
+    got = token_from(headers, query)
+    return hmac.compare_digest(got.encode('utf-8'), TOKEN.encode('utf-8'))
 
 
 # ---------- 真实状态采集 ----------
@@ -1059,6 +1091,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Type', ctype)
         self.send_header('Content-Length', str(len(body)))
         self.send_header('Cache-Control', 'no-store')
+        if getattr(self, '_cookie', None):
+            self.send_header('Set-Cookie', self._cookie)
+            self._cookie = None
         self.end_headers()
         try:
             self.wfile.write(body)
@@ -1074,7 +1109,25 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             return {}
 
+    def _guard(self):
+        """统一鉴权入口：不通过直接返回 401 并中断本次请求。
+
+        通过 ?token= 首次访问时下发 HttpOnly Cookie，使 <script>/<link>/<video>
+        这类无法自定义请求头的子资源请求在后续自动携带令牌。
+        """
+        query = urlparse(self.path).query
+        if not authorized(self.headers, query):
+            self._send(401, {'error': 'unauthorized',
+                             'hint': '需要 Authorization: Bearer <CONSOLE_TOKEN> 或 ?token=<CONSOLE_TOKEN>'})
+            return False
+        if TOKEN and (parse_qs(query).get('token') or [''])[0].strip() == TOKEN:
+            self._cookie = ('console_token=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=604800'
+                            % quote(TOKEN))
+        return True
+
     def do_GET(self):
+        if not self._guard():
+            return
         u = urlparse(self.path)
         path = unquote(u.path)
         if path in ('/', '/index.html'):
@@ -1175,6 +1228,8 @@ class Handler(BaseHTTPRequestHandler):
                     break
 
     def do_POST(self):
+        if not self._guard():
+            return
         u = urlparse(self.path)
         api = unquote(u.path)[5:]
         body = self._body()
@@ -1204,9 +1259,17 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     BASE.mkdir(parents=True, exist_ok=True)
     (BASE / 'logs').mkdir(exist_ok=True)
-    srv = ThreadingHTTPServer(('0.0.0.0', PORT), Handler)
+    # 非回环地址必须带令牌，否则拒绝启动（防止管理接口在局域网/公网裸奔）
+    if BIND not in LOOPBACK and not TOKEN:
+        sys.stderr.write(
+            '[console] 拒绝启动：CONSOLE_BIND=%s 不是回环地址，但未设置 CONSOLE_TOKEN。\n'
+            '          请设置 CONSOLE_TOKEN，或改回 CONSOLE_BIND=127.0.0.1。\n' % BIND)
+        sys.stderr.flush()
+        sys.exit(2)
+    srv = ThreadingHTTPServer((BIND, PORT), Handler)
     srv.daemon_threads = True
-    sys.stderr.write('[console] listening on 0.0.0.0:%d\n' % PORT)
+    sys.stderr.write('[console] listening on %s:%d (auth: %s)\n'
+                     % (BIND, PORT, 'token' if TOKEN else 'none/loopback'))
     sys.stderr.flush()
     srv.serve_forever()
 

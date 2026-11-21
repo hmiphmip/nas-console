@@ -11,11 +11,20 @@ function timeoutSignal(ms) {
   setTimeout(() => c.abort(), ms);
   return c.signal;
 }
+/* 访问令牌：优先取 ?token= 并记住，其次读 localStorage。服务端未启用令牌时留空即可。 */
+const CONSOLE_TOKEN = (() => {
+  const q = new URLSearchParams(location.search).get('token');
+  if (q) { try { localStorage.setItem('console_token', q); } catch (e) {} return q; }
+  try { return localStorage.getItem('console_token') || ''; } catch (e) { return ''; }
+})();
 async function api(path, opts) {
   const o = Object.assign({ signal: timeoutSignal(8000) }, opts || {});
+  o.headers = Object.assign({}, o.headers || {});
+  if (CONSOLE_TOKEN) o.headers['X-Console-Token'] = CONSOLE_TOKEN;
   let r;
   try { r = await fetch('/api/' + path, o); }
   catch (e) { throw new Error(e.name === 'TimeoutError' || e.name === 'AbortError' ? '请求超时（8 秒）' : '网络不可达'); }
+  if (r.status === 401) throw new Error('未授权：请用 /?token=你的令牌 打开控制台');
   if (!r.ok) throw new Error('接口返回 HTTP ' + r.status);
   try { return await r.json(); }
   catch { throw new Error('接口返回的不是有效 JSON'); }
