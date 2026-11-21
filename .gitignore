@@ -14,6 +14,8 @@ packages/
 # 本地环境与密钥
 .env
 .env.*
+# 示例配置需要入库，否则新用户无从参照
+!.env.example
 secrets/
 .venv/
 venv/
